@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dream Makers T-Shirt Order</title>
     
+    <!-- Title Bar Logo (Favicon) -->
+    <link rel="icon" type="image/jpeg" href="https://dilnuka13.github.io/DM/1750483906074.jpg">
+    <link rel="shortcut icon" type="image/jpeg" href="https://dilnuka13.github.io/DM/1750483906074.jpg">
+
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
@@ -95,7 +99,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
         const { motion, AnimatePresence } = window.Motion;
         const { createClient } = window.supabase;
         const { jsPDF } = window.jspdf;
@@ -136,6 +140,9 @@
             Image: () => <i data-lucide="image" className="w-4 h-4"></i>,
             Sheet: () => <i data-lucide="table" className="w-4 h-4"></i>,
             Scissors: () => <i data-lucide="scissors" className="w-4 h-4"></i>,
+            Search: () => <i data-lucide="search" className="w-4 h-4"></i>,
+            Trash: () => <i data-lucide="trash-2" className="w-4 h-4"></i>,
+            Shirt: () => <i data-lucide="shirt" className="w-4 h-4"></i>,
         };
 
         // --- App Component ---
@@ -428,6 +435,7 @@
         function OrderList() {
             const [orders, setOrders] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState("");
             const tableRef = useRef(null);
             const factoryTableRef = useRef(null);
 
@@ -441,12 +449,39 @@
                 setLoading(false);
             };
 
+            const handleDelete = async (id) => {
+                if (window.confirm("Are you sure you want to delete this order?")) {
+                    const { error } = await supabase.from('orders').delete().eq('id', id);
+                    if (!error) {
+                        setOrders(orders.filter(order => order.id !== id));
+                    } else {
+                        alert("Failed to delete order.");
+                    }
+                }
+            };
+
+            // Calculate Stats (Size Counts)
+            const sizeStats = useMemo(() => {
+                const stats = { S: 0, M: 0, L: 0, XL: 0, XXL: 0, XXXL: 0, Total: 0 };
+                orders.forEach(order => {
+                    if (stats[order.size] !== undefined) stats[order.size]++;
+                    stats.Total++;
+                });
+                return stats;
+            }, [orders]);
+
+            // Filter Orders
+            const filteredOrders = orders.filter(order => 
+                order.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                order.id.toString().includes(searchTerm)
+            );
+
             // --- CSV Export ---
             const downloadCSV = () => {
                 const headers = ["ID", "Date", "Name", "Size", "Type", "Amount"];
                 const csvContent = "data:text/csv;charset=utf-8," 
                     + headers.join(",") + "\n"
-                    + orders.map(r => `${r.id},${new Date(r.created_at).toLocaleDateString()},${r.name},${r.size},${r.payment_type},${r.amount}`).join("\n");
+                    + filteredOrders.map(r => `${r.id},${new Date(r.created_at).toLocaleDateString()},${r.name},${r.size},${r.payment_type},${r.amount}`).join("\n");
                 const link = document.createElement("a");
                 link.setAttribute("href", encodeURI(csvContent));
                 link.setAttribute("download", "DreamMakers_Orders.csv");
@@ -467,10 +502,9 @@
                     console.warn("Logo load failed for PDF", e);
                 }
 
-                // Header Text
                 doc.setFont("helvetica", "bold");
                 doc.setFontSize(22);
-                doc.setTextColor(41, 128, 185); // Blue color
+                doc.setTextColor(41, 128, 185); 
                 doc.text("Dream Makers", 40, 20);
                 
                 doc.setFontSize(12);
@@ -478,11 +512,10 @@
                 doc.text("Sport & Youth Club - T-Shirt Orders", 40, 28);
                 
                 doc.setDrawColor(200);
-                doc.line(14, 35, 196, 35); // Horizontal line
+                doc.line(14, 35, 196, 35);
 
-                // Table
                 const tableColumn = ["ID", "Date", "Name", "Size", "Payment", "Amount (Rs)"];
-                const tableRows = orders.map(order => [
+                const tableRows = filteredOrders.map(order => [
                     order.id,
                     new Date(order.created_at).toLocaleDateString('en-GB'),
                     order.name,
@@ -499,20 +532,16 @@
                     headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
                     alternateRowStyles: { fillColor: [240, 248, 255] },
                     styles: { font: "helvetica", fontSize: 10, cellPadding: 3 },
-                    foot: [['', '', '', 'Total', '', orders.reduce((sum, item) => sum + item.amount, 0) + '.00']],
+                    foot: [['', '', '', 'Total', '', filteredOrders.reduce((sum, item) => sum + item.amount, 0) + '.00']],
                     footStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' }
                 });
 
                 doc.save("DreamMakers_Report.pdf");
             };
 
-            // --- JPG Export (Full System View) ---
             const downloadJPG = async () => {
                 if(!tableRef.current) return;
-                const canvas = await html2canvas(tableRef.current, {
-                    backgroundColor: "#1e293b", // Dark background match
-                    scale: 2 // High res
-                });
+                const canvas = await html2canvas(tableRef.current, { backgroundColor: "#1e293b", scale: 2 });
                 const image = canvas.toDataURL("image/jpeg", 1.0);
                 const link = document.createElement("a");
                 link.href = image;
@@ -520,13 +549,9 @@
                 link.click();
             };
 
-            // --- Factory List Export (Name & Size Only) ---
             const downloadFactoryJPG = async () => {
                 if(!factoryTableRef.current) return;
-                const canvas = await html2canvas(factoryTableRef.current, {
-                    backgroundColor: "#ffffff", // White background for printing
-                    scale: 2 // High res
-                });
+                const canvas = await html2canvas(factoryTableRef.current, { backgroundColor: "#ffffff", scale: 2 });
                 const image = canvas.toDataURL("image/jpeg", 1.0);
                 const link = document.createElement("a");
                 link.href = image;
@@ -541,19 +566,48 @@
                     exit={{ scale: 0.95, opacity: 0 }}
                     className="glass-panel rounded-2xl p-6 md:p-8"
                 >
-                    <div className="flex flex-col xl:flex-row justify-between items-center mb-8 gap-6">
-                        <div>
-                            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                    {/* --- Dashboard / Stats Section --- */}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8">
+                        {['S', 'M', 'L', 'XL', 'XXL'].map(size => (
+                            <div key={size} className="bg-slate-800/50 border border-slate-700/50 p-3 rounded-xl text-center backdrop-blur-sm">
+                                <div className="text-slate-400 text-xs font-bold uppercase mb-1">Size {size}</div>
+                                <div className="text-2xl font-bold text-white">{sizeStats[size] || 0}</div>
+                            </div>
+                        ))}
+                        <div className="bg-blue-600/20 border border-blue-500/30 p-3 rounded-xl text-center backdrop-blur-sm">
+                            <div className="text-blue-300 text-xs font-bold uppercase mb-1">Total</div>
+                            <div className="text-2xl font-bold text-blue-400">{sizeStats.Total}</div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col xl:flex-row justify-between items-end xl:items-center mb-6 gap-4">
+                        <div className="w-full xl:w-auto">
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-2 mb-4 xl:mb-0">
                                 <Icons.List /> Order List
                             </h2>
-                            <p className="text-slate-400 text-sm mt-1">Total Orders: <span className="text-blue-400 font-bold">{orders.length}</span></p>
                         </div>
-                        
-                        <div className="flex flex-wrap justify-center gap-2">
-                            <ActionButton onClick={downloadCSV} color="emerald" icon={<Icons.Sheet />} label="CSV" />
-                            <ActionButton onClick={downloadPDF} color="rose" icon={<Icons.FileText />} label="PDF" />
-                            <ActionButton onClick={downloadJPG} color="sky" icon={<Icons.Image />} label="System JPG" />
-                            <ActionButton onClick={downloadFactoryJPG} color="orange" icon={<Icons.Scissors />} label="Factory JPG" />
+
+                        <div className="flex flex-col md:flex-row w-full xl:w-auto gap-4 items-center">
+                            {/* Search Bar */}
+                            <div className="relative w-full md:w-64 group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
+                                    <Icons.Search />
+                                </div>
+                                <input 
+                                    type="text" 
+                                    placeholder="Search by Name..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full bg-slate-900/50 border border-slate-700 text-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-all"
+                                />
+                            </div>
+                            
+                            <div className="flex flex-wrap justify-center gap-2">
+                                <ActionButton onClick={downloadCSV} color="emerald" icon={<Icons.Sheet />} label="CSV" />
+                                <ActionButton onClick={downloadPDF} color="rose" icon={<Icons.FileText />} label="PDF" />
+                                <ActionButton onClick={downloadJPG} color="sky" icon={<Icons.Image />} label="System" />
+                                <ActionButton onClick={downloadFactoryJPG} color="orange" icon={<Icons.Scissors />} label="Factory" />
+                            </div>
                         </div>
                     </div>
 
@@ -569,15 +623,16 @@
                                         <th className="p-4">Size</th>
                                         <th className="p-4">Status</th>
                                         <th className="p-4 text-right">Amount</th>
+                                        <th className="p-4 text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/50 text-sm">
                                     {loading ? (
-                                        <tr><td colSpan="6" className="p-8 text-center text-slate-500 animate-pulse">Loading Data...</td></tr>
-                                    ) : orders.length === 0 ? (
-                                        <tr><td colSpan="6" className="p-8 text-center text-slate-500">No data available.</td></tr>
+                                        <tr><td colSpan="7" className="p-8 text-center text-slate-500 animate-pulse">Loading Data...</td></tr>
+                                    ) : filteredOrders.length === 0 ? (
+                                        <tr><td colSpan="7" className="p-8 text-center text-slate-500">No matching records found.</td></tr>
                                     ) : (
-                                        orders.map((order, index) => (
+                                        filteredOrders.map((order, index) => (
                                             <tr key={order.id} className={`hover:bg-slate-700/30 transition-colors ${index % 2 === 0 ? 'bg-slate-800/20' : ''}`}>
                                                 <td className="p-4 font-mono text-slate-500">#{order.id}</td>
                                                 <td className="p-4 text-slate-400">{new Date(order.created_at).toLocaleDateString('en-GB')}</td>
@@ -599,6 +654,15 @@
                                                 <td className="p-4 text-right font-mono text-slate-300">
                                                     Rs. {order.amount}
                                                 </td>
+                                                <td className="p-4 text-center">
+                                                    <button 
+                                                        onClick={() => handleDelete(order.id)}
+                                                        className="text-slate-500 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-500/10"
+                                                        title="Delete Order"
+                                                    >
+                                                        <Icons.Trash />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -606,11 +670,11 @@
                             </table>
                         </div>
                         {/* Table Footer Stats */}
-                        {!loading && orders.length > 0 && (
+                        {!loading && filteredOrders.length > 0 && (
                             <div className="bg-slate-800/80 p-4 border-t border-slate-700 flex justify-end gap-6 text-sm">
                                 <span className="text-slate-400">Total Collection:</span>
                                 <span className="text-emerald-400 font-bold font-mono text-lg">
-                                    Rs. {orders.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}.00
+                                    Rs. {filteredOrders.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}.00
                                 </span>
                             </div>
                         )}
@@ -623,6 +687,14 @@
                             <p style={{ fontSize: '14px', color: '#555' }}>T-Shirt Order Details (Name & Size Only)</p>
                             <p style={{ fontSize: '12px', marginTop: '5px' }}>Date Generated: {new Date().toLocaleDateString('en-GB')}</p>
                         </div>
+                        
+                        {/* Add summary to Factory List too */}
+                        <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', justifyContent: 'center', fontSize: '12px' }}>
+                             {Object.entries(sizeStats).map(([key, val]) => (
+                                 key !== 'Total' && val > 0 && <span key={key} style={{ border: '1px solid #ccc', padding: '2px 8px', borderRadius: '4px' }}><b>{key}:</b> {val}</span>
+                             ))}
+                        </div>
+
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                             <thead>
                                 <tr style={{ background: '#f0f0f0', borderBottom: '2px solid #333' }}>
@@ -632,7 +704,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {orders.map((order, idx) => (
+                                {filteredOrders.map((order, idx) => (
                                     <tr key={order.id} style={{ borderBottom: '1px solid #eee' }}>
                                         <td style={{ padding: '8px', border: '1px solid #ddd', width: '50px' }}>{idx + 1}</td>
                                         <td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>{order.name}</td>
@@ -642,7 +714,7 @@
                             </tbody>
                         </table>
                         <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '14px', fontWeight: 'bold' }}>
-                            Total Count: {orders.length}
+                            Total Count: {filteredOrders.length}
                         </div>
                     </div>
 
@@ -661,9 +733,9 @@
             return (
                 <button 
                     onClick={onClick}
-                    className={`${colors[color]} text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold shadow-lg transition-all hover:-translate-y-0.5 whitespace-nowrap`}
+                    className={`${colors[color]} text-white px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-bold shadow-lg transition-all hover:-translate-y-0.5 whitespace-nowrap`}
                 >
-                    {icon} {label}
+                    {icon} <span className="hidden sm:inline">{label}</span>
                 </button>
             );
         }
